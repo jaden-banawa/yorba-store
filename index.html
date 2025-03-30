@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snack Store</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Home Screen -->
+  <div id="home-screen">
+    <h1>Snack Store</h1>
+    <button id="add-profile-btn">➕ Add Profile</button>
+    <div id="profile-grid" class="grid"></div>
+  </div>
+
+  <!-- Add Profile Screen -->
+  <div id="add-profile-screen" class="hidden">
+    <h2>Add New Profile</h2>
+    <input type="text" id="new-name" placeholder="Name" required />
+    <input type="text" id="new-image" placeholder="Image URL" />
+    <button id="submit-profile">Add</button>
+    <button id="cancel-add-profile">Cancel</button>
+  </div>
+
+  <!-- Profile Modal Overlay -->
+  <div id="input-overlay" class="hidden overlay">
+    <div class="input-modal">
+      <img id="user-image" src="" alt="User Image" class="profile-pic" />
+      <h2 id="user-name"></h2>
+      <p>Balance: $<span id="user-balance">0.00</span></p>
+  
+      <input type="number" id="amount" placeholder="0.00" step="0.01" />
+      <button id="confirm-session-btn">Confirm</button>
+      <button id="back-btn">Close</button>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
