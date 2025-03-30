@@ -82,7 +82,48 @@ document.getElementById("cancel-add-profile").addEventListener("click", () => {
 
 document.getElementById("submit-profile").addEventListener("click", () => {
   const name = document.getElementById("new-name").value.trim();
-  const image = document.getElementById("new-image").value.trim() || "https://i.pravatar.cc/150";
+  const fileInput = document.getElementById("new-image-file");
+const file = fileInput.files[0];
+
+if (!file) {
+  alert("Please select or take a profile picture.");
+  return;
+}
+
+const reader = new FileReader();
+reader.onload = function (e) {
+  const image = e.target.result; // base64 string of the image
+
+  const newProfile = {
+    id,
+    name,
+    image,
+    balance: "0.00"
+  };
+
+  fetch(SHEET_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(newProfile)
+  })
+    .then(res => res.json())
+    .then(() => {
+      alert(`${name} added!`);
+      document.getElementById("new-name").value = "";
+      fileInput.value = "";
+
+      document.getElementById("add-profile-screen").classList.add("hidden");
+      document.getElementById("home-screen").classList.remove("hidden");
+      fetchUsers();
+    })
+    .catch(err => {
+      console.error("Failed to add profile", err);
+      alert("Something went wrong.");
+    });
+};
+
+reader.readAsDataURL(file);
+
 
   if (!name) {
     alert("Please enter a name.");
