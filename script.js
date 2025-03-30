@@ -92,35 +92,54 @@ if (!file) {
 
 const reader = new FileReader();
 reader.onload = function (e) {
-  const image = e.target.result; // base64 string of the image
+  const img = new Image();
+  img.onload = function () {
+    // Crop to square
+    const side = Math.min(img.width, img.height);
+    const startX = (img.width - side) / 2;
+    const startY = (img.height - side) / 2;
 
-  const newProfile = {
-    id,
-    name,
-    image,
-    balance: "0.00"
+    const canvas = document.createElement("canvas");
+    const size = 150; // final cropped size
+    canvas.width = size;
+    canvas.height = size;
+
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, startX, startY, side, side, 0, 0, size, size);
+
+    const image = canvas.toDataURL("image/jpeg", 0.9); // cropped & resized base64
+
+    const newProfile = {
+      id,
+      name,
+      image,
+      balance: "0.00"
+    };
+
+    fetch(SHEET_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newProfile)
+    })
+      .then(res => res.json())
+      .then(() => {
+        alert(`${name} added!`);
+        document.getElementById("new-name").value = "";
+        fileInput.value = "";
+
+        document.getElementById("add-profile-screen").classList.add("hidden");
+        document.getElementById("home-screen").classList.remove("hidden");
+        fetchUsers();
+      })
+      .catch(err => {
+        console.error("Failed to add profile", err);
+        alert("Something went wrong.");
+      });
   };
 
-  fetch(SHEET_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(newProfile)
-  })
-    .then(res => res.json())
-    .then(() => {
-      alert(`${name} added!`);
-      document.getElementById("new-name").value = "";
-      fileInput.value = "";
-
-      document.getElementById("add-profile-screen").classList.add("hidden");
-      document.getElementById("home-screen").classList.remove("hidden");
-      fetchUsers();
-    })
-    .catch(err => {
-      console.error("Failed to add profile", err);
-      alert("Something went wrong.");
-    });
+  img.src = e.target.result;
 };
+
 
 reader.readAsDataURL(file);
 
