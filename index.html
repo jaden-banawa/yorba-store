@@ -18,7 +18,11 @@
   <div id="add-profile-screen" class="hidden">
     <h2>Add New Profile</h2>
     <input type="text" id="new-name" placeholder="Name" required />
-    <input type="file" id="new-image-file" accept="image/*" />
+    <div class="custom-file-upload">
+      <label for="new-image-file">📷 Choose Profile Picture</label>
+      <input type="file" id="new-image-file" accept="image/*" />
+    </div>
+
     <button id="submit-profile">Add</button>
     <button id="cancel-add-profile">Cancel</button>
   </div>
