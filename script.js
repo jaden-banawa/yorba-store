@@ -8,9 +8,6 @@
 // 1) Put your SheetBest URL here. If your data is on a tab, append /tabs/<TabName>
 const SHEET_URL = "https://api.sheetbest.com/sheets/21177b5e-b9d3-4136-bf70-b1bafca31b38";
 
-// Optional: if your SheetBest API is protected by key, set it here (or leave empty)
-const SHEET_API_KEY = ""; // e.g., "sb_live_XXXX"; if set, we include X-Api-Key header
-
 // ----------------------
 // DOM Cache
 // ----------------------
@@ -280,3 +277,4 @@ el.submitProfile.addEventListener("click", async () => {
 fetchUsers().catch(err => {
   console.error("Initial load failed:", err);
 });
+
