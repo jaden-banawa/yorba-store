@@ -1,208 +1,267 @@
+// ===== Ynigo Mart — Robust JS wired for SheetBest =====
+
+// If your data lives in a specific tab, append: `${SHEET_URL}/tabs/YourTabName`
 const SHEET_URL = "https://api.sheetbest.com/sheets/21177b5e-b9d3-4136-bf70-b1bafca31b38";
 
-let currentUser = null;
-let allUsers = [];
+// ---- State ----
+let allUsers = [];        // normalized rows with _row index (for PATCH)
+let currentUser = null;   // the user currently opened in the modal
 
-function getBalance(user) {
-  return parseFloat(user.balance) || 0;
+// ---- DOM Cache ----
+const el = {
+  grid: document.getElementById("profile-grid"),
+  addBtn: document.getElementById("add-profile-btn"),
+  home: document.getElementById("home-screen"),
+  addScreen: document.getElementById("add-profile-screen"),
+  submitProfile: document.getElementById("submit-profile"),
+  cancelAdd: document.getElementById("cancel-add-profile"),
+  newName: document.getElementById("new-name"),
+  newImgFile: document.getElementById("new-image-file"),
+  overlay: document.getElementById("input-overlay"),
+  userImg: document.getElementById("user-image"),
+  userName: document.getElementById("user-name"),
+  userBal: document.getElementById("user-balance"),
+  amount: document.getElementById("amount"),
+  confirmSession: document.getElementById("confirm-session-btn"),
+  backBtn: document.getElementById("back-btn"),
+};
+
+// ---- Utils ----
+const DEFAULT_AVATAR =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(`
+  <svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'>
+    <rect width='120' height='120' fill='#e5f3fb'/>
+    <circle cx='60' cy='46' r='22' fill='#62b6f0'/>
+    <rect x='20' y='78' width='80' height='28' rx='14' fill='#62b6f0'/>
+  </svg>`);
+
+// Lowercase keys from SheetBest rows so "Name"/"name" both work
+function normalizeRow(row) {
+  const out = {};
+  Object.keys(row || {}).forEach(k => {
+    out[k.trim().toLowerCase()] = row[k];
+  });
+  return out;
+}
+
+function toMoney(n) {
+  const x = parseFloat(n);
+  return isNaN(x) ? "0.00" : x.toFixed(2);
+}
+
+// Draw a single profile card
+function createProfileCard(user) {
+  const card = document.createElement("div");
+  card.className = "profile";
+
+  const imgSrc = user.image?.trim() ? user.image : DEFAULT_AVATAR;
+
+  card.innerHTML = `
+    <img src="${imgSrc}" alt="${user.name}" />
+    <h3>${user.name}</h3>
+  `;
+  card.addEventListener("click", () => openUser(user));
+  return card;
 }
 
 function renderProfiles(users) {
-  const grid = document.getElementById("profile-grid");
-  grid.innerHTML = "";
-
-  users.forEach(user => {
-    if (!user.id || !user.name || !user.image || user.balance === undefined) return;
-
-    const div = document.createElement("div");
-    div.className = "profile";
-    div.innerHTML = `
-      <img src="${user.image}" alt="${user.name}" />
-      <h3>${user.name}</h3>
-    `;
-    div.addEventListener("click", () => openUser(user));
-    grid.appendChild(div);
-  });
+  el.grid.innerHTML = "";
+  if (!users || users.length === 0) return;
+  users.forEach(u => el.grid.appendChild(createProfileCard(u)));
 }
 
+// ---- SheetBest I/O ----
+// NOTE: SheetBest updates by *row number* (0-based for data rows). We store that
+// value as `_row` so we can PATCH like `${SHEET_URL}/${_row}`. :contentReference[oaicite:2]{index=2}
+async function fetchUsers() {
+  try {
+    const res = await fetch(SHEET_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const raw = await res.json();
+
+    // Normalize and attach row index
+    allUsers = (raw || []).map((r, idx) => {
+      const row = normalizeRow(r);
+      return {
+        _row: idx, // important for PATCH
+        id: (row.id ?? row.ID ?? row.Id ?? "").toString(),
+        name: (row.name ?? row.Name ?? "").toString(),
+        image: (row.image ?? row.Image ?? "").toString(),
+        balance: toMoney(row.balance ?? row.Balance ?? "0.00"),
+      };
+    }).filter(u => u.name); // show rows with at least a name
+
+    renderProfiles(allUsers);
+  } catch (err) {
+    console.error("Failed to load sheet data:", err);
+  }
+}
+
+async function patchRowByIndex(rowIndex, partial) {
+  // PATCH by row number per docs: /<row number>
+  // Example: PATCH .../1 updates the second data row (0-based). :contentReference[oaicite:3]{index=3}
+  const url = `${SHEET_URL}/${rowIndex}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(partial),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`PATCH failed ${res.status}: ${t || res.statusText}`);
+  }
+  return res.json();
+}
+
+async function postRow(data) {
+  const res = await fetch(SHEET_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`POST failed ${res.status}: ${t || res.statusText}`);
+  }
+  return res.json();
+}
+
+// ---- Modal / Session ----
 function openUser(user) {
   currentUser = user;
-  sessionItems = [];
-  document.getElementById("user-name").textContent = user.name;
-  document.getElementById("user-balance").textContent = getBalance(user).toFixed(2);
-  document.getElementById("amount").value = "";
-  document.getElementById("user-image").src = user.image;
-
-  document.getElementById("input-overlay").classList.remove("hidden");
+  el.userName.textContent = user.name;
+  el.userBal.textContent = toMoney(user.balance);
+  el.amount.value = "";
+  el.userImg.src = user.image?.trim() ? user.image : DEFAULT_AVATAR;
+  el.overlay.classList.remove("hidden");
 }
 
-document.getElementById("back-btn").addEventListener("click", () => {
-  document.getElementById("input-overlay").classList.add("hidden");
+el.backBtn.addEventListener("click", () => {
+  el.overlay.classList.add("hidden");
 });
 
-
-document.getElementById("confirm-session-btn").addEventListener("click", () => {
-    const amount = parseFloat(document.getElementById("amount").value);
+// Confirm adding funds (kept same behavior: positive numbers only)
+el.confirmSession.addEventListener("click", async () => {
+  try {
+    const amount = parseFloat(el.amount.value);
     if (isNaN(amount) || amount <= 0) {
       alert("Please enter a valid amount.");
       return;
     }
-  
-    const newBalance = getBalance(currentUser) + amount;
-    currentUser.balance = newBalance.toFixed(2);
-    document.getElementById("user-balance").textContent = currentUser.balance;
-  
-    const updateUrl = `${SHEET_URL}/id/${currentUser.id}`;
-  
-    fetch(updateUrl, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ balance: currentUser.balance })
-    })
-      .then(res => res.json())
-      .then(() => {
-        document.getElementById("amount").value = "";
-        fetchUsers();
-      })
-      .catch(err => {
-        console.error("Failed to update balance", err);
-      });
-  });
-  
 
-document.getElementById("add-profile-btn").addEventListener("click", () => {
-  document.getElementById("home-screen").classList.add("hidden");
-  document.getElementById("add-profile-screen").classList.remove("hidden");
+    const newBalance = parseFloat(currentUser.balance || "0") + amount;
+    const patch = { Balance: toMoney(newBalance) }; // use Sheet header casing (robust)
+    await patchRowByIndex(currentUser._row, patch);
+
+    // Update local state + UI
+    currentUser.balance = toMoney(newBalance);
+    el.userBal.textContent = currentUser.balance;
+    el.amount.value = "";
+
+    // Refresh full list (keeps row indexes correct after other changes)
+    await fetchUsers();
+  } catch (err) {
+    console.error("Failed to update balance:", err);
+    alert("Could not update balance. See console for details.");
+  }
 });
 
-document.getElementById("cancel-add-profile").addEventListener("click", () => {
-  document.getElementById("add-profile-screen").classList.add("hidden");
-  document.getElementById("home-screen").classList.remove("hidden");
+// ---- Add Profile ----
+el.addBtn.addEventListener("click", () => {
+  el.home.classList.add("hidden");
+  el.addScreen.classList.remove("hidden");
 });
 
-document.getElementById("submit-profile").addEventListener("click", () => {
-  const name = document.getElementById("new-name").value.trim();
-  const fileInput = document.getElementById("new-image-file");
-const file = fileInput.files[0];
+el.cancelAdd.addEventListener("click", () => {
+  el.addScreen.classList.add("hidden");
+  el.home.classList.remove("hidden");
+});
 
-if (!file) {
-  alert("Please select or take a profile picture.");
-  return;
+// Crop to center-square and resize to 150px
+function cropToSquare(img, size = 150, mime = "image/jpeg", quality = 0.9) {
+  const side = Math.min(img.width, img.height);
+  const sx = (img.width - side) / 2;
+  const sy = (img.height - side) / 2;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+  return canvas.toDataURL(mime, quality);
 }
 
-const reader = new FileReader();
-reader.onload = function (e) {
-  const img = new Image();
-  img.onload = function () {
-    // Crop to square
-    const side = Math.min(img.width, img.height);
-    const startX = (img.width - side) / 2;
-    const startY = (img.height - side) / 2;
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(file);
+  });
+}
 
-    const canvas = document.createElement("canvas");
-    const size = 150; // final cropped size
-    canvas.width = size;
-    canvas.height = size;
+el.submitProfile.addEventListener("click", async () => {
+  try {
+    const name = el.newName.value.trim();
+    const file = el.newImgFile.files[0];
 
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(img, startX, startY, side, side, 0, 0, size, size);
+    if (!name) {
+      alert("Please enter a name.");
+      return;
+    }
+    if (!file) {
+      alert("Please select or take a profile picture.");
+      return;
+    }
 
-    const image = canvas.toDataURL("image/jpeg", 0.9); // cropped & resized base64
+    // Calculate next id (numeric max + 1). Falls back to 1 if no numeric IDs yet.
+    const maxId = allUsers.reduce((max, u) => {
+      const n = parseInt(u.id, 10);
+      return Number.isFinite(n) ? Math.max(max, n) : max;
+    }, 0);
+    const id = String(maxId + 1);
 
+    // Prepare cropped image
+    const dataUrl = await readFileAsDataURL(file);
+    const img = await new Promise((res, rej) => {
+      const i = new Image();
+      i.onload = () => res(i);
+      i.onerror = rej;
+      i.src = dataUrl;
+    });
+    const cropped = cropToSquare(img, 150);
+
+    // Build row. IMPORTANT: use original header casing likely present in your sheet.
+    // We'll send capitalized keys so SheetBest maps them cleanly regardless. :contentReference[oaicite:4]{index=4}
     const newProfile = {
-      id,
-      name,
-      image,
-      balance: "0.00"
+      Id: id,
+      Name: name,
+      Image: cropped,
+      Balance: "0.00",
     };
 
-    fetch(SHEET_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newProfile)
-    })
-      .then(res => res.json())
-      .then(() => {
-        alert(`${name} added!`);
-        document.getElementById("new-name").value = "";
-        fileInput.value = "";
+    await postRow(newProfile);
 
-        document.getElementById("add-profile-screen").classList.add("hidden");
-        document.getElementById("home-screen").classList.remove("hidden");
-        fetchUsers();
-      })
-      .catch(err => {
-        console.error("Failed to add profile", err);
-        alert("Something went wrong.");
-      });
-  };
+    alert(`${name} added!`);
+    el.newName.value = "";
+    el.newImgFile.value = "";
 
-  img.src = e.target.result;
-};
+    el.addScreen.classList.add("hidden");
+    el.home.classList.remove("hidden");
 
-
-reader.readAsDataURL(file);
-
-
-  if (!name) {
-    alert("Please enter a name.");
-    return;
+    await fetchUsers();
+  } catch (err) {
+    console.error("Failed to add profile:", err);
+    alert("Something went wrong adding the profile. See console for details.");
   }
-
-  const maxId = allUsers.reduce((max, user) => {
-    const numericId = parseInt(user.id, 10);
-    return numericId > max ? numericId : max;
-  }, 0);
-
-  const id = (maxId + 1).toString();
-
-  const newProfile = {
-    id,
-    name,
-    image,
-    balance: "0.00"
-  };
-
-  fetch(SHEET_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(newProfile)
-  })
-    .then(res => res.json())
-    .then(() => {
-      alert(`${name} added!`);
-      document.getElementById("new-name").value = "";
-      document.getElementById("new-image").value = "";
-
-      document.getElementById("add-profile-screen").classList.add("hidden");
-      document.getElementById("home-screen").classList.remove("hidden");
-      fetchUsers();
-    })
-    .catch(err => {
-      console.error("Failed to add profile", err);
-      alert("Something went wrong.");
-    });
 });
 
-document.getElementById("amount").addEventListener("blur", () => {
-    let amt = parseFloat(document.getElementById("amount").value);
-    if (!isNaN(amt)) {
-      document.getElementById("amount").value = amt.toFixed(2);
-    }
-  });
+// ---- Input niceties ----
+el.amount.addEventListener("blur", () => {
+  const v = parseFloat(el.amount.value);
+  if (!isNaN(v)) el.amount.value = v.toFixed(2);
+});
 
-function fetchUsers() {
-  fetch(SHEET_URL)
-    .then(res => res.json())
-    .then(data => {
-      allUsers = data.filter(user =>
-        user.id && user.name && user.image && user.balance !== undefined
-      );
-      renderProfiles(allUsers);
-    })
-    .catch(err => {
-      console.error("Failed to load sheet data", err);
-    });
-}
-
+// ---- Boot ----
 fetchUsers();
